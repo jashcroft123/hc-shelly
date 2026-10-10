@@ -1,0 +1,28 @@
+[package]
+name = "hc-shelly"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Local Shelly Dimmer Gen3 integration for homeCore"
+repository = "https://github.com/jashcroft123/hc-shelly"
+
+[features]
+default = ["schema"]
+schema = ["dep:schemars", "plugin-sdk-rs/schema"]
+
+[dependencies]
+plugin-sdk-rs = { git = "https://github.com/homeCore-io/homeCore", rev = "88f87c4edfef47d966036086117b563d17d499fa" }
+schemars = { version = "1", optional = true }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "registry"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "stream"] }
+digest_auth = "0.3.1"
+
+[dev-dependencies]
+axum = { version = "0.8", features = ["ws"] }
+sha2 = "0.10"

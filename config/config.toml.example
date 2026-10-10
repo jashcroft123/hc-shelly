@@ -1,0 +1,18 @@
+[homecore]
+plugin_id = "plugin.shelly"
+broker_host = "127.0.0.1"
+broker_port = 1883
+password = ""
+
+[logging]
+forward_level = "info"
+
+[shelly]
+poll_interval_secs = 5
+
+[[shelly.devices]]
+id = "shelly_dimmer_living_room"
+name = "Living room dimmer"
+host = "192.168.1.100"
+# Shelly's local admin password, if authentication is enabled.
+password = ""

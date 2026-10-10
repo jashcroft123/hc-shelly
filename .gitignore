@@ -1,0 +1,6 @@
+/target/
+/config/config.toml
+/.published-device-ids*
+/config/.published-device-ids*
+*.log
+*.pdb
