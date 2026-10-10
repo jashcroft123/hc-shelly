@@ -1,5 +1,7 @@
 mod config;
+mod mqtt;
 mod rpc;
+mod websocket;
 
 use anyhow::Result;
 use plugin_sdk_rs::mqtt_log_layer::{MqttLogHandle, MqttLogLayer};
@@ -14,7 +16,7 @@ use std::{
     path::Path,
     time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tracing::{error, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -77,10 +79,26 @@ async fn run(path: &str, logs: MqttLogHandle) -> Result<()> {
     // Per-device queues and workers keep a disconnected dimmer from blocking others.
     let mut routes = HashMap::new();
     let mut workers = Vec::new();
+    let mut mqtt_routes = Vec::new();
+    let mut websocket_routes = Vec::new();
     for device in &cfg.shelly.devices {
         let (tx, rx) = mpsc::channel::<Value>(32);
         routes.insert(device.id.clone(), tx);
-        workers.push((device.clone(), rx));
+        let updates = if device.state_transport != config::StateTransport::Http {
+            let (tx, rx) = watch::channel(None);
+            match device.state_transport {
+                config::StateTransport::Mqtt => mqtt_routes.push(mqtt::Route {
+                    prefix: device.mqtt_topic.clone(),
+                    updates: tx,
+                }),
+                config::StateTransport::Websocket => websocket_routes.push((device.clone(), tx)),
+                config::StateTransport::Http => unreachable!(),
+            }
+            Some(rx)
+        } else {
+            None
+        };
+        workers.push((device.clone(), rx, updates));
     }
     // Drive MQTT before registrations can fill its bounded publish queue.
     let mut mqtt_task = tokio::spawn(async move {
@@ -119,11 +137,19 @@ async fn run(path: &str, logs: MqttLogHandle) -> Result<()> {
     }
     publisher.reconcile_devices(live).await?;
     let mut tasks = tokio::task::JoinSet::new();
-    for (device, rx) in workers {
+    if !mqtt_routes.is_empty() {
+        let mqtt_config = cfg.shelly.mqtt.clone();
+        tasks.spawn(async move { mqtt::run(mqtt_config, mqtt_routes).await });
+    }
+    for (device, updates) in websocket_routes {
+        tasks.spawn(async move { websocket::run(device, updates).await });
+    }
+    for (device, rx, updates) in workers {
         tasks.spawn(worker(
             device,
             cfg.shelly.poll_interval_secs,
             rx,
+            updates,
             publisher.clone(),
             notices.clone(),
         ));
@@ -148,6 +174,7 @@ async fn worker(
     device: config::Device,
     interval: u64,
     mut commands: mpsc::Receiver<Value>,
+    mut updates: Option<watch::Receiver<Option<mqtt::Update>>>,
     publisher: DevicePublisher,
     notices: PluginNotices,
 ) -> Result<()> {
@@ -155,11 +182,49 @@ async fn worker(
     let mut poll = tokio::time::interval(Duration::from_secs(interval));
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut verified = false;
+    let mut push_connected = false;
     let notice = format!("device_unreachable_{}", device.id);
+    let push_notice = format!("device_push_disconnected_{}", device.id);
     loop {
         let command = tokio::select! {
-            _ = poll.tick() => None,
+            // Poll HTTP devices, failed verification, or disconnected WebSockets.
+            _ = poll.tick(), if device.state_transport == config::StateTransport::Http
+                || !verified
+                || (device.state_transport == config::StateTransport::Websocket && !push_connected) => None,
             command = commands.recv() => match command { Some(c) => Some(c), None => return Ok(()) },
+            update = async {
+                match updates.as_mut() {
+                    Some(rx) => {
+                        rx.changed().await.ok()?;
+                        rx.borrow_and_update().clone()
+                    }
+                    None => std::future::pending().await,
+                }
+            } => {
+                match update {
+                    Some(mqtt::Update::State(state)) => {
+                        push_connected = true;
+                        notices.clear(&push_notice);
+                        if verified {
+                            publisher.publish_state(&device.id, &state).await?;
+                            publisher.publish_availability(&device.id, true).await?;
+                            notices.clear(&notice);
+                            continue;
+                        }
+                        None
+                    }
+                    Some(mqtt::Update::Offline) => {
+                        push_connected = false;
+                        publisher.publish_availability(&device.id, false).await?;
+                        notices.raise(PluginNotice::warning(&push_notice,
+                            format!("{} push connection is unavailable", device.name))
+                            .with_remedy("Check Wi-Fi, device password and selected broker. WebSocket mode uses HTTP polling while reconnecting."));
+                        continue;
+                    }
+                    Some(mqtt::Update::Resync) => None,
+                    None => return Ok(()),
+                }
+            }
         };
         if let Some(ref payload) = command {
             if let Err(e) = rpc::command_params(payload) {
