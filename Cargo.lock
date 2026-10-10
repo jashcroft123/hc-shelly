@@ -571,18 +571,22 @@ dependencies = [
 
 [[package]]
 name = "hc-shelly"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
  "digest_auth",
+ "futures-util",
  "plugin-sdk-rs",
+ "rand 0.9.4",
  "reqwest",
+ "rumqttc",
  "schemars",
  "serde",
  "serde_json",
  "sha2",
  "tokio",
+ "tokio-tungstenite",
  "toml",
  "tracing",
  "tracing-subscriber",

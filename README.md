@@ -8,13 +8,22 @@ for reproducible builds. This repository originated from that project's plugin
 template and retains its dual MIT/Apache-2.0 licensing.
 
 Local integration for **Shelly Dimmer Gen3** (app `DimmerG3`, model
-`S3DM-0A101WWL`). Uses the device's HTTP RPC API, without a cloud account or
-changes to the Shelly's MQTT settings. Gen1 Dimmer 2 is not supported.
+`S3DM-0A101WWL`). Choose **WebSocket push**, **HTTP polling**, or **native MQTT push updates** per
+device, and mix all three in one installation. No cloud account is needed.
+Gen1 Dimmer 2 is not supported.
 
-Features: on/off, brightness 0–100%, five-second state polling (including
-physical switch changes), hardware state readback after commands, offline
+Features: on/off, brightness 0–100%, WebSocket notifications with HTTP fallback,
+five-second HTTP polling or MQTT state
+notifications (including physical switch changes), hardware state readback after commands, offline
 availability, reconnects, per-device command queues, SHA-256 Digest authentication,
 and homeCore's typed configuration UI and management heartbeat.
+
+**[Setup guide: WebSocket, HTTP, MQTT, and mixed installations](docs/transports.md).**
+WebSocket is the default: prompt device updates without broker setup, with HTTP
+polling while reconnecting. Since 0.2.0, configurations that omit
+`state_transport` use WebSocket; set `state_transport = "http"` to retain polling.
+MQTT mode receives state from the Shelly's broker. Commands, model verification
+and recovery reads use local HTTP in every mode; the options select state transport.
 
 ## Build and configure
 
@@ -29,6 +38,8 @@ cargo build --release --locked
 Add one `[[shelly.devices]]` row per dimmer with a stable id, name, IP/hostname
 and optional local admin password. Prefer a DHCP reservation. This version uses
 configured addresses rather than automatic discovery. Keep credentials local.
+For MQTT updates, also configure `state_transport = "mqtt"`, `mqtt_topic`,
+and `[shelly.mqtt]` as explained in the setup guide.
 
 For core to supervise the binary, add to `homecore.toml` and restart core:
 

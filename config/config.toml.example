@@ -10,9 +10,32 @@ forward_level = "info"
 [shelly]
 poll_interval_secs = 5
 
+# Native Shelly broker, used only when at least one device selects MQTT updates.
+# This can be the homeCore broker or a separate LAN broker.
+[shelly.mqtt]
+broker_host = "127.0.0.1"
+broker_port = 1883
+client_id = "hc-shelly-events"
+username = ""
+password = ""
+
 [[shelly.devices]]
 id = "shelly_dimmer_living_room"
 name = "Living room dimmer"
 host = "192.168.1.100"
 # Shelly's local admin password, if authentication is enabled.
 password = ""
+# Recommended default: direct push notifications, with HTTP fallback while reconnecting.
+# Other options: "http" (polling) or "mqtt" (device MQTT setup required).
+state_transport = "websocket"
+# Only required for state_transport = "mqtt": exact topic_prefix from MQTT.GetConfig.
+mqtt_topic = ""
+
+# Optional: a second device can use MQTT updates alongside the WebSocket device above.
+# [[shelly.devices]]
+# id = "shelly_dimmer_hall"
+# name = "Hall dimmer"
+# host = "192.168.1.101"
+# password = ""
+# state_transport = "mqtt"
+# mqtt_topic = "shellydimmerg3-device-id"
